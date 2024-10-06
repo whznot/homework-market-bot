@@ -1,6 +1,6 @@
 .venv/
-config.py
 tasks.db
 *.pyc
 __pycache__/
 .idea/
+.env
