@@ -11,18 +11,21 @@ from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyb
 
 from config import TOKEN
 
+DATABASE_PATH = 'tasks.db'
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-DATABASE_PATH = 'tasks.db'
 
 
 class RequestStates(StatesGroup):
     waiting_for_subject = State()
     waiting_for_deadline = State()
-    asking_for_description = State()
+    waiting_for_description = State()
     processing_description = State()
     waiting_for_confirmation = State()
+    waiting_for_subject_update = State()
+    waiting_for_deadline_update = State()
+    waiting_for_description_update = State()
 
 
 async def init_db():
@@ -57,10 +60,10 @@ async def ask_for_subject(message: Message, state: FSMContext):
 async def ask_for_deadline(message: Message, state: FSMContext):
     await state.update_data(subject=message.text)
     await message.answer('укажи дeдлайн, при необходимости вместе с временем')
-    await state.set_state(RequestStates.asking_for_description)
+    await state.set_state(RequestStates.waiting_for_description)
 
 
-@dp.message(RequestStates.asking_for_description)
+@dp.message(RequestStates.waiting_for_description)
 async def ask_for_description(message: Message, state: FSMContext):
     await state.update_data(deadline=message.text)
     await message.answer('отправь фото задания или его описание')
@@ -75,6 +78,62 @@ async def process_task_description(message: Message, state: FSMContext):
     elif message.content_type == 'text':
         await state.update_data(description=message.text)
 
+    await show_task_summary(message, state)
+
+
+@dp.message(RequestStates.waiting_for_confirmation)
+async def ask_for_confirmation(message: Message, state: FSMContext):
+    if message.text == '1':
+        data = await state.get_data()
+
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            await db.execute('''
+                INSERT INTO tasks (subject, deadline, description)
+                VALUES (?, ?, ?)
+            ''', (data['subject'], data['deadline'], data['description']))
+            await db.commit()
+
+        await message.answer(f'заявка создана успешно.\nв ближайшее время за твою работу возьмутся, жди оповещение')
+        await state.clear()
+
+    elif message.text == '2':
+        await ask_for_subject(message, state)
+    elif message.text == '3':
+        await message.answer('отправь название предмета')
+        await state.set_state(RequestStates.waiting_for_subject_update)
+    elif message.text == '4':
+        await message.answer('отправь дедлайн')
+        await state.set_state(RequestStates.waiting_for_deadline_update)
+    elif message.text == '5':
+        await message.answer('отправь фото задания или его описание')
+        await state.set_state(RequestStates.waiting_for_description_update)
+    else:
+        await message.answer('выбери опцию от 1 до 5')
+
+
+@dp.message(RequestStates.waiting_for_subject_update)
+async def update_subject(message: Message, state: FSMContext):
+    await state.update_data(subject=message.text)
+    await show_task_summary(message, state)
+
+
+@dp.message(RequestStates.waiting_for_deadline_update)
+async def update_deadline(message: Message, state: FSMContext):
+    await state.update_data(deadline=message.text)
+    await show_task_summary(message, state)
+
+
+@dp.message(RequestStates.waiting_for_description_update)
+async def update_description(message: Message, state: FSMContext):
+    if message.content_type == 'photo':
+        file_id = message.photo[-1].file_id
+        await state.update_data(description=file_id)
+    elif message.content_type == 'text':
+        await state.update_data(description=message.text)
+    await show_task_summary(message, state)
+
+
+async def show_task_summary(message: Message, state: FSMContext):
     data = await state.get_data()
 
     form = (f"Предмет: {data['subject']}\n"
@@ -87,30 +146,6 @@ async def process_task_description(message: Message, state: FSMContext):
     await message.answer(form)
     await message.answer(navigation, reply_markup=get_numeric_task_navigation_keyboard())
     await state.set_state(RequestStates.waiting_for_confirmation)
-
-
-@dp.message(RequestStates.waiting_for_confirmation)
-async def ask_for_confirmation(message: Message, state: FSMContext):
-    if message.text == '1':
-        data = await state.get_data()
-
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            await  db.execute('''
-                INSERT INTO tasks (subject, deadline, description)
-                VALUES (?, ?, ?)
-            ''', (data['subject'], data['deadline'], data['description']))
-            await db.commit()
-
-        await message.answer(f'заявка создана успешно.\nв ближайшее время за твою работу возьмутся, жди оповещение')
-        await state.clear()
-    elif message.text == '2':
-        await state.set_state(RequestStates.waiting_for_subject)
-    elif message.text == '3':
-        await state.set_state(RequestStates.waiting_for_subject)
-    elif message.text == '4':
-        await state.set_state(RequestStates.waiting_for_deadline)
-    elif message.text == '5':
-        await state.set_state(RequestStates.asking_for_description)
 
 
 if __name__ == "__main__":
