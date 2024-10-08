@@ -33,6 +33,7 @@ async def init_db():
         await db.execute('''
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 subject TEXT NOT NULL,
                 deadline TEXT NOT NULL,
                 description TEXT
@@ -44,7 +45,7 @@ async def init_db():
 @dp.message(CommandStart())
 async def send_welcome(message: Message, state: FSMContext):
     await message.answer(
-        'создай заявку по инструкциям для любого дз, включая проекты и т.п. и желающий выполнит ее за плату',
+        'Создай заявку по инструкциям для любого дз, включая проекты и т.п. и желающий выполнит ее за плату',
         reply_markup=get_create_task_keyboard()
     )
     await state.set_state(RequestStates.waiting_for_subject)
@@ -52,30 +53,30 @@ async def send_welcome(message: Message, state: FSMContext):
 
 @dp.message(RequestStates.waiting_for_subject)
 async def ask_for_subject(message: Message, state: FSMContext):
-    await message.answer('напиши название предмета')
+    await message.answer('Напиши название предмета')
     await state.set_state(RequestStates.waiting_for_deadline)
 
 
 @dp.message(RequestStates.waiting_for_deadline)
 async def ask_for_deadline(message: Message, state: FSMContext):
     await state.update_data(subject=message.text)
-    await message.answer('укажи дeдлайн, при необходимости вместе с временем')
+    await message.answer('Укажи дeдлайн, при необходимости вместе с временем')
     await state.set_state(RequestStates.waiting_for_description)
 
 
 @dp.message(RequestStates.waiting_for_description)
 async def ask_for_description(message: Message, state: FSMContext):
     await state.update_data(deadline=message.text)
-    await message.answer('отправь фото задания или его описание')
+    await message.answer('Отправь фото задания или его описание')
     await state.set_state(RequestStates.processing_description)
 
 
 @dp.message(F.content_type.in_({ContentType.TEXT, ContentType.PHOTO}), RequestStates.processing_description)
 async def process_task_description(message: Message, state: FSMContext):
-    if message.content_type == 'photo':
+    if message.content_type == ContentType.PHOTO:
         file_id = message.photo[-1].file_id
         await state.update_data(description=file_id)
-    elif message.content_type == 'text':
+    else:
         await state.update_data(description=message.text)
 
     await show_task_summary(message, state)
@@ -93,22 +94,22 @@ async def ask_for_confirmation(message: Message, state: FSMContext):
             ''', (data['subject'], data['deadline'], data['description']))
             await db.commit()
 
-        await message.answer(f'заявка создана успешно.\nв ближайшее время за твою работу возьмутся, жди оповещение')
+        await message.answer(f'Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение')
         await state.clear()
 
     elif message.text == '2':
         await ask_for_subject(message, state)
     elif message.text == '3':
-        await message.answer('отправь название предмета')
+        await message.answer('Отправь название предмета')
         await state.set_state(RequestStates.waiting_for_subject_update)
     elif message.text == '4':
-        await message.answer('отправь дедлайн')
+        await message.answer('Отправь дедлайн')
         await state.set_state(RequestStates.waiting_for_deadline_update)
     elif message.text == '5':
-        await message.answer('отправь фото задания или его описание')
+        await message.answer('Отправь фото задания или его описание')
         await state.set_state(RequestStates.waiting_for_description_update)
     else:
-        await message.answer('выбери опцию от 1 до 5')
+        await message.answer('Выбери опцию от 1 до 5')
 
 
 @dp.message(RequestStates.waiting_for_subject_update)
@@ -125,10 +126,10 @@ async def update_deadline(message: Message, state: FSMContext):
 
 @dp.message(RequestStates.waiting_for_description_update)
 async def update_description(message: Message, state: FSMContext):
-    if message.content_type == 'photo':
+    if message.content_type == ContentType.PHOTO:
         file_id = message.photo[-1].file_id
         await state.update_data(description=file_id)
-    elif message.content_type == 'text':
+    else:
         await state.update_data(description=message.text)
     await show_task_summary(message, state)
 
@@ -137,13 +138,24 @@ async def show_task_summary(message: Message, state: FSMContext):
     data = await state.get_data()
 
     form = (f"Предмет: {data['subject']}\n"
-            f"Дедлайн: {data['deadline']}\n"
-            f"Описание: {data['description']}")
+            f"Дедлайн: {data['deadline']}\n")
 
-    navigation = '1. Подтвердить.\n2. Заполнить заявку заново.\n3. Изменить предмет.\n4. Изменить дедлайн.\n5. Изменить описание.'
+    await message.answer('Вот так выглядит твоя заявка:')
 
-    await message.answer('вот так выглядит твоя заявка:')
-    await message.answer(form)
+    if message.content_type == ContentType.PHOTO:
+        await message.answer_photo(data['description'], form)
+    else:
+        form += f"Описание: {data['description']}"
+        await message.answer(form)
+
+    navigation = (
+        '1. Подтвердить.\n'
+        '2. Заполнить заявку заново.\n'
+        '3. Изменить предмет.\n'
+        '4. Изменить дедлайн.\n'
+        '5. Изменить описание.'
+    )
+
     await message.answer(navigation, reply_markup=get_numeric_task_navigation_keyboard())
     await state.set_state(RequestStates.waiting_for_confirmation)
 
