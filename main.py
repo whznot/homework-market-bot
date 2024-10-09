@@ -1,7 +1,7 @@
 import aiosqlite
 from aiogram import Bot, F
 from aiogram.enums import ContentType
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -36,7 +36,8 @@ async def init_db():
                 user_id INTEGER NOT NULL,
                 subject TEXT NOT NULL,
                 deadline TEXT NOT NULL,
-                description TEXT
+                description TEXT,
+                photo_id TEXT
             )
         ''')
         await db.commit()
@@ -89,9 +90,9 @@ async def ask_for_confirmation(message: Message, state: FSMContext):
 
         async with aiosqlite.connect(DATABASE_PATH) as db:
             await db.execute('''
-                INSERT INTO tasks (subject, deadline, description)
-                VALUES (?, ?, ?)
-            ''', (data['subject'], data['deadline'], data['description']))
+                INSERT INTO tasks (user_id, subject, deadline, description)
+                VALUES (?, ?, ?, ?)
+            ''', (message.from_user.id, data['subject'], data['deadline'], data['description']))
             await db.commit()
 
         await message.answer(f'Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение')
@@ -158,6 +159,30 @@ async def show_task_summary(message: Message, state: FSMContext):
 
     await message.answer(navigation, reply_markup=get_numeric_task_navigation_keyboard())
     await state.set_state(RequestStates.waiting_for_confirmation)
+
+
+@dp.message(Command('mytasks'))
+async def my_tasks(message: Message):
+    user_id = message.from_user.id
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute('SELECT subject, deadline, description FROM tasks WHERE user_id = ?', (user_id,))
+        tasks = await cursor.fetchall()
+
+        if not tasks:
+            await message.answer('Текущие заявки отсутствуют, создать новую?', reply_markup=get_create_task_keyboard())
+        else:
+            for task in tasks:
+                subject = task[0]
+                deadline = task[1]
+                description = task[2]
+
+            task_summary = f'Предмет: {subject}\nДедлайн: {deadline}'
+
+
+
+
+            task_list = '\n\n'.join([f'Предмет: {task[0]}\nДедлайн: {task[1]}\nОписание: {task[2]}' for task in tasks])
+            await message.answer(task_list)
 
 
 if __name__ == "__main__":
