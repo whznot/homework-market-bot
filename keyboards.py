@@ -4,7 +4,7 @@ from aiogram.types import ReplyKeyboardMarkup
 
 def get_create_task_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text='создать заявку'))
+    builder.row(KeyboardButton(text='Создать заявку'))
     return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
 

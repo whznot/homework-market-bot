@@ -8,10 +8,9 @@ from aiogram.types import Message
 from aiogram import Dispatcher
 
 from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyboard
-
 from config import TOKEN
 
-DATABASE_PATH = 'tasks.db'
+DATABASE_PATH = "tasks.db"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -30,7 +29,7 @@ class RequestStates(StatesGroup):
 
 async def init_db():
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute('''
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -39,14 +38,14 @@ async def init_db():
                 description TEXT,
                 photo_id TEXT
             )
-        ''')
+        """)
         await db.commit()
 
 
 @dp.message(CommandStart())
 async def send_welcome(message: Message, state: FSMContext):
     await message.answer(
-        'Создай заявку по инструкциям для любого дз, включая проекты и т.п. и желающий выполнит ее за плату',
+        "Создай заявку по инструкциям для любого дз, включая проекты и т.п. и желающий выполнит ее за плату",
         reply_markup=get_create_task_keyboard()
     )
     await state.set_state(RequestStates.waiting_for_subject)
@@ -54,21 +53,21 @@ async def send_welcome(message: Message, state: FSMContext):
 
 @dp.message(RequestStates.waiting_for_subject)
 async def ask_for_subject(message: Message, state: FSMContext):
-    await message.answer('Напиши название предмета')
+    await message.answer("Напиши название предмета")
     await state.set_state(RequestStates.waiting_for_deadline)
 
 
 @dp.message(RequestStates.waiting_for_deadline)
 async def ask_for_deadline(message: Message, state: FSMContext):
     await state.update_data(subject=message.text)
-    await message.answer('Укажи дeдлайн, при необходимости вместе с временем')
+    await message.answer("Укажи дeдлайн, при необходимости вместе с временем")
     await state.set_state(RequestStates.waiting_for_description)
 
 
 @dp.message(RequestStates.waiting_for_description)
 async def ask_for_description(message: Message, state: FSMContext):
     await state.update_data(deadline=message.text)
-    await message.answer('Отправь фото задания или его описание')
+    await message.answer("Отправь фото задания или его описание")
     await state.set_state(RequestStates.processing_description)
 
 
@@ -85,32 +84,32 @@ async def process_task_description(message: Message, state: FSMContext):
 
 @dp.message(RequestStates.waiting_for_confirmation)
 async def ask_for_confirmation(message: Message, state: FSMContext):
-    if message.text == '1':
+    if message.text == "1":
         data = await state.get_data()
 
         async with aiosqlite.connect(DATABASE_PATH) as db:
-            await db.execute('''
+            await db.execute("""
                 INSERT INTO tasks (user_id, subject, deadline, description)
                 VALUES (?, ?, ?, ?)
-            ''', (message.from_user.id, data['subject'], data['deadline'], data['description']))
+            """, (message.from_user.id, data["subject"], data["deadline"], data["description"]))
             await db.commit()
 
-        await message.answer(f'Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение')
+        await message.answer(f"Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение")
         await state.clear()
 
-    elif message.text == '2':
+    elif message.text == "2":
         await ask_for_subject(message, state)
-    elif message.text == '3':
-        await message.answer('Отправь название предмета')
+    elif message.text == "3":
+        await message.answer("Отправь название предмета")
         await state.set_state(RequestStates.waiting_for_subject_update)
-    elif message.text == '4':
-        await message.answer('Отправь дедлайн')
+    elif message.text == "4":
+        await message.answer("Отправь дедлайн")
         await state.set_state(RequestStates.waiting_for_deadline_update)
-    elif message.text == '5':
-        await message.answer('Отправь фото задания или его описание')
+    elif message.text == "5":
+        await message.answer("Отправь фото задания или его описание")
         await state.set_state(RequestStates.waiting_for_description_update)
     else:
-        await message.answer('Выбери опцию от 1 до 5')
+        await message.answer("Выбери опцию от 1 до 5")
 
 
 @dp.message(RequestStates.waiting_for_subject_update)
@@ -138,51 +137,62 @@ async def update_description(message: Message, state: FSMContext):
 async def show_task_summary(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    form = (f"Предмет: {data['subject']}\n"
-            f"Дедлайн: {data['deadline']}\n")
-
-    await message.answer('Вот так выглядит твоя заявка:')
-
-    if message.content_type == ContentType.PHOTO:
-        await message.answer_photo(data['description'], form)
-    else:
-        form += f"Описание: {data['description']}"
-        await message.answer(form)
-
-    navigation = (
-        '1. Подтвердить.\n'
-        '2. Заполнить заявку заново.\n'
-        '3. Изменить предмет.\n'
-        '4. Изменить дедлайн.\n'
-        '5. Изменить описание.'
+    form = (
+        f"<b>Предмет:</b> {data['subject']}\n\n"
+        f"<b>Дедлайн:</b> {data['deadline']}\n\n"
     )
 
-    await message.answer(navigation, reply_markup=get_numeric_task_navigation_keyboard())
+    if "description" in data and data["description"]:
+        form += f"<b>Описание:</b> {data['description']}\n\n"
+
+    await message.answer("Вот так выглядит твоя заявка:", parse_mode="HTML")
+
+    if "description" in data and message.content_type == ContentType.PHOTO:
+        await message.answer_photo(data["description"], caption=form, parse_mode="HTML")
+    else:
+        await message.answer(form, parse_mode="HTML")
+
+    navigation = (
+        "1. Подтвердить.\n"
+        "2. Заполнить заявку заново.\n"
+        "3. Изменить предмет.\n"
+        "4. Изменить дедлайн.\n"
+        "5. Изменить описание.\n"
+    )
+
+    await message.answer(navigation, reply_markup=get_numeric_task_navigation_keyboard(), parse_mode="HTML")
     await state.set_state(RequestStates.waiting_for_confirmation)
 
 
-@dp.message(Command('mytasks'))
-async def my_tasks(message: Message):
+@dp.message(Command("mytasks"))
+async def my_tasks(message: Message, state: FSMContext):
     user_id = message.from_user.id
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute('SELECT subject, deadline, description FROM tasks WHERE user_id = ?', (user_id,))
+        cursor = await db.execute("SELECT subject, deadline, description, photo_id FROM tasks WHERE user_id = ?",
+                                  (user_id,))
         tasks = await cursor.fetchall()
 
         if not tasks:
-            await message.answer('Текущие заявки отсутствуют, создать новую?', reply_markup=get_create_task_keyboard())
+            await message.answer("Текущие заявки отсутствуют, создать новую?", reply_markup=get_create_task_keyboard())
+            await state.set_state(RequestStates.waiting_for_subject)
         else:
             for task in tasks:
                 subject = task[0]
                 deadline = task[1]
                 description = task[2]
+                photo_id = task[3]
 
-            task_summary = f'Предмет: {subject}\nДедлайн: {deadline}'
+                task_summary = (
+                    f"<b>Предмет:</b> {subject}\n\n"
+                    f"<b>Дедлайн:</b> {deadline}\n\n"
+                )
 
-
-
-
-            task_list = '\n\n'.join([f'Предмет: {task[0]}\nДедлайн: {task[1]}\nОписание: {task[2]}' for task in tasks])
-            await message.answer(task_list)
+                if photo_id:
+                    await message.answer_photo(photo_id, caption=task_summary)
+                else:
+                    if description:
+                        task_summary += f"<b>Описание:</b> {description}\n\n"
+                    await message.answer(task_summary, parse_mode="HTML")
 
 
 if __name__ == "__main__":
