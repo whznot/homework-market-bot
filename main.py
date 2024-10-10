@@ -4,10 +4,12 @@ from aiogram.enums import ContentType
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram import Dispatcher
 
-from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyboard
+from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyboard, get_task_action_keyboard, \
+    task_callback
+
 from config import TOKEN
 
 DATABASE_PATH = "tasks.db"
@@ -75,7 +77,7 @@ async def ask_for_description(message: Message, state: FSMContext):
 async def process_task_description(message: Message, state: FSMContext):
     if message.content_type == ContentType.PHOTO:
         file_id = message.photo[-1].file_id
-        await state.update_data(description=file_id)
+        await state.update_data(photo_id=file_id)
     else:
         await state.update_data(description=message.text)
 
@@ -87,14 +89,17 @@ async def ask_for_confirmation(message: Message, state: FSMContext):
     if message.text == "1":
         data = await state.get_data()
 
+        description = data.get("description", None)
+        photo_id = data.get("photo_id", None)
+
         async with aiosqlite.connect(DATABASE_PATH) as db:
             await db.execute("""
-                INSERT INTO tasks (user_id, subject, deadline, description)
-                VALUES (?, ?, ?, ?)
-            """, (message.from_user.id, data["subject"], data["deadline"], data["description"]))
+                INSERT INTO tasks (user_id, subject, deadline, description, photo_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (message.from_user.id, data["subject"], data["deadline"], description, photo_id))
             await db.commit()
 
-        await message.answer(f"Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение")
+        await message.answer(f"Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение.\nСоздать еще одну?")
         await state.clear()
 
     elif message.text == "2":
@@ -147,8 +152,8 @@ async def show_task_summary(message: Message, state: FSMContext):
 
     await message.answer("Вот так выглядит твоя заявка:", parse_mode="HTML")
 
-    if "description" in data and message.content_type == ContentType.PHOTO:
-        await message.answer_photo(data["description"], caption=form, parse_mode="HTML")
+    if "photo_id" in data and data["photo_id"]:
+        await message.answer_photo(data["photo_id"], caption=form, parse_mode="HTML")
     else:
         await message.answer(form, parse_mode="HTML")
 
@@ -168,7 +173,7 @@ async def show_task_summary(message: Message, state: FSMContext):
 async def my_tasks(message: Message, state: FSMContext):
     user_id = message.from_user.id
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute("SELECT subject, deadline, description, photo_id FROM tasks WHERE user_id = ?",
+        cursor = await db.execute("SELECT id, subject, deadline, description, photo_id FROM tasks WHERE user_id = ?",
                                   (user_id,))
         tasks = await cursor.fetchall()
 
@@ -177,22 +182,24 @@ async def my_tasks(message: Message, state: FSMContext):
             await state.set_state(RequestStates.waiting_for_subject)
         else:
             for task in tasks:
-                subject = task[0]
-                deadline = task[1]
-                description = task[2]
-                photo_id = task[3]
+                task_id = task[0]
+                subject = task[1]
+                deadline = task[2]
+                description = task[3]
+                photo_id = task[4]
 
                 task_summary = (
                     f"<b>Предмет:</b> {subject}\n\n"
                     f"<b>Дедлайн:</b> {deadline}\n\n"
                 )
 
+                if description:
+                    task_summary += f"<b>Описание:</b> {description}\n\n"
+
                 if photo_id:
-                    await message.answer_photo(photo_id, caption=task_summary)
+                    await message.answer_photo(photo_id, caption=task_summary, parse_mode="HTML", reply_markup=get_task_action_keyboard(task_id))
                 else:
-                    if description:
-                        task_summary += f"<b>Описание:</b> {description}\n\n"
-                    await message.answer(task_summary, parse_mode="HTML")
+                    await message.answer(task_summary, parse_mode="HTML", reply_markup=get_task_action_keyboard(task_id))
 
 
 if __name__ == "__main__":
