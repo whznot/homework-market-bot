@@ -1,11 +1,5 @@
 from sqlalchemy.future import select
 from models import Task
-<<<<<<< HEAD
-
-
-async def add_task(session, user_id: int, subject: str, deadline: str, description: str = None, photo_id: str = None):
-    new_task = Task(user_id=user_id, subject=subject, deadline=deadline, description=description, photo_id=photo_id)
-=======
 import datetime
 import pytz
 import dateparser
@@ -28,7 +22,6 @@ async def add_task(session, user_id: int, subject: str, deadline: str, descripti
     deadline_utc = convert_to_utc(deadline)
     deadline_str = format_datetime_to_str(deadline_utc)
     new_task = Task(user_id=user_id, subject=subject, deadline=deadline_str, description=description, photo_id=photo_id)
->>>>>>> 8a44031 (migrated to a new stable folder)
     session.add(new_task)
     await session.commit()
     return new_task
