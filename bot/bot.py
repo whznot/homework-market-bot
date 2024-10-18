@@ -63,8 +63,16 @@ async def process_task_description(message: Message, state: FSMContext):
     if message.content_type == ContentType.PHOTO:
         file_id = message.photo[-1].file_id
         data["photo_id"] = file_id
+<<<<<<< HEAD
     else:
         data["description"] = message.text
+=======
+        await state.update_data(photo_id=file_id)
+    else:
+        description = message.text
+        data["description"] = description
+        await state.update_data(description=description)
+>>>>>>> 8a44031 (migrated to a new stable folder)
 
     await show_task_summary(message, state)
 
@@ -193,5 +201,15 @@ if __name__ == "__main__":
     import asyncio
     from db import init_db
 
+<<<<<<< HEAD
     asyncio.run(init_db())
     dp.run_polling(bot)
+=======
+
+    async def main():
+        await init_db()
+        await dp.start_polling(bot)
+
+
+    asyncio.run(main())
+>>>>>>> 8a44031 (migrated to a new stable folder)
