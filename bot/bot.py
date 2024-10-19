@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 
+from queries import convert_to_utc, format_datetime_to_str
 from config import TOKEN
 from db import async_session
 from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyboard, get_task_action_keyboard, \
@@ -20,6 +21,7 @@ class RequestStates(StatesGroup):
     waiting_for_subject = State()
     waiting_for_deadline = State()
     waiting_for_description = State()
+    waiting_for_deadline_input = State()
     processing_description = State()
     waiting_for_confirmation = State()
     waiting_for_subject_update = State()
@@ -46,18 +48,27 @@ async def ask_for_subject(message: Message, state: FSMContext):
 async def ask_for_deadline(message: Message, state: FSMContext):
     await state.update_data(subject=message.text)
     await message.answer("Укажи дeдлайн, при необходимости вместе с временем")
+
+    await state.set_state(RequestStates.waiting_for_deadline_input)
+
+
+@dp.message(RequestStates.waiting_for_deadline_input)
+async def process_deadline(message: Message, state: FSMContext):
+    date_input = message.text
+
+    try:
+        formatted_date = format_datetime_to_str(convert_to_utc(date_input))
+    except ValueError:
+        await message.answer("Дата не распознана, укажи дедлайн корректно.")
+        return
+
+    await state.update_data(deadline=formatted_date)
+    await message.answer("Отправь фото задания или его описание")
     await state.set_state(RequestStates.waiting_for_description)
 
 
-@dp.message(RequestStates.waiting_for_description)
-async def ask_for_description(message: Message, state: FSMContext):
-    await state.update_data(deadline=message.text)
-    await message.answer("Отправь фото задания или его описание")
-    await state.set_state(RequestStates.processing_description)
-
-
-@dp.message(F.content_type.in_({ContentType.TEXT, ContentType.PHOTO}), RequestStates.processing_description)
-async def process_task_description(message: Message, state: FSMContext):
+@dp.message(F.content_type.in_({ContentType.TEXT, ContentType.PHOTO}), RequestStates.waiting_for_description)
+async def process_description(message: Message, state: FSMContext):
     data = await state.get_data()
 
     if message.content_type == ContentType.PHOTO:

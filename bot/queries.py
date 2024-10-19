@@ -15,7 +15,7 @@ def convert_to_utc(datetime_str: str) -> datetime.datetime:
 
 
 def format_datetime_to_str(dt: datetime.datetime) -> str:
-    return dt.strftime("%A, %d-%m, %H:%M")
+    return dt.strftime("%A, %d.%m, %H:%M")
 
 
 async def add_task(session, user_id: int, subject: str, deadline: str, description: str = None, photo_id: str = None):
