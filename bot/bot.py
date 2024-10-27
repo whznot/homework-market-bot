@@ -6,12 +6,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 
-from queries import convert_to_utc, format_datetime_to_str
 from config import TOKEN
 from db import async_session
 from keyboards import get_create_task_keyboard, get_numeric_task_navigation_keyboard, get_task_action_keyboard, \
     TaskCallbackFactory
 from queries import add_task, get_user_tasks, delete_task, get_task_by_id
+from utils import parse_user_date
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -47,22 +47,19 @@ async def ask_for_subject(message: Message, state: FSMContext):
 @dp.message(RequestStates.waiting_for_deadline)
 async def ask_for_deadline(message: Message, state: FSMContext):
     await state.update_data(subject=message.text)
-    await message.answer("Укажи дeдлайн, при необходимости вместе с временем")
+    await message.answer("Укажи дедлайн, при необходимости вместе с временем. Время должно быть указано по украинскому времени.")
 
     await state.set_state(RequestStates.waiting_for_deadline_input)
 
 
 @dp.message(RequestStates.waiting_for_deadline_input)
 async def process_deadline(message: Message, state: FSMContext):
-    date_input = message.text
-
-    try:
-        formatted_date = format_datetime_to_str(convert_to_utc(date_input))
-    except ValueError:
-        await message.answer("Дата не распознана, укажи дедлайн корректно.")
+    formatted_deadline = parse_user_date(message.text)
+    if not formatted_deadline:
+        await message.answer("Дата указана неверно, попробуй снова.")
         return
 
-    await state.update_data(deadline=formatted_date)
+    await state.update_data(deadline=formatted_deadline)
     await message.answer("Отправь фото задания или его описание")
     await state.set_state(RequestStates.waiting_for_description)
 
@@ -70,7 +67,7 @@ async def process_deadline(message: Message, state: FSMContext):
 @dp.message(F.content_type.in_({ContentType.TEXT, ContentType.PHOTO}), RequestStates.waiting_for_description)
 async def process_description(message: Message, state: FSMContext):
     data = await state.get_data()
-
+ 
     if message.content_type == ContentType.PHOTO:
         file_id = message.photo[-1].file_id
         data["photo_id"] = file_id
@@ -88,11 +85,17 @@ async def ask_for_confirmation(message: Message, state: FSMContext):
     if message.text == "1":
         data = await state.get_data()
         async with async_session() as session:
-            await add_task(session, user_id=message.from_user.id, subject=data["subject"], deadline=data["deadline"],
-                           description=data.get("description"), photo_id=data.get("photo_id"))
+            await add_task(
+                session,
+                user_id=message.from_user.id,
+                subject=data["subject"],
+                deadline=data["deadline"],
+                description=data.get("description"),
+                photo_id=data.get("photo_id")
+            )
 
-        await message.answer(
-            f"Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение.\nСоздать еще одну?")
+        await message.answer("Заявка создана успешно.\nВ ближайшее время за твою работу возьмутся, жди оповещение.")
+        await message.answer("Создать еще одну заявку?")
         await state.clear()
 
     elif message.text == "2":
